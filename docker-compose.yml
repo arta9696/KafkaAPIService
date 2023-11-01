@@ -1,0 +1,98 @@
+﻿services:
+   app:
+       build:
+           context: "."
+           dockerfile: ./Dockerfile
+       container_name: "WebAPI"
+       env_file:
+           - db.env
+       ports:
+           - 80:80
+       depends_on:
+           - kafka-db
+           - connect
+       networks:
+           - app-network
+   db-controller:
+        build:
+            context: "../KafkaDataService"
+            dockerfile: ./Dockerfile
+        container_name: "db-controller"
+        ports:
+           - 81:80
+        env_file:
+           - db.env
+        depends_on:
+           - kafka-db
+           - connect
+        networks:
+           - app-network
+   kafka-db:
+       build:
+            context: "../KafkaDataService"
+            dockerfile: ./Database/Dockerfile
+       restart: always
+       container_name: "kafka-db"
+       env_file:
+           - db.env
+       volumes:
+           - database:/var/lib/postgresql/data
+       networks:
+           - app-network
+   adminer:
+        image: adminer
+        ports:
+           - 82:8080
+        networks:
+           - app-network
+
+   zookeeper:
+        image: "confluentinc/cp-zookeeper:5.5.0"
+        environment: 
+          ZOOKEEPER_CLIENT_PORT: 2181
+        networks:
+           - app-network
+   kafka:
+        image: "confluentinc/cp-kafka"
+        depends_on:
+          - zookeeper
+        environment:
+         - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 
+         - KAFKA_BROKERID=1
+         - ALLOW_PLAINTEXT_LISTENER="yes"
+         - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+         - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://kafka:9092
+         - KAFKA_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://kafka:9092
+         - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+         - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+        networks:
+           - app-network
+
+   connect:
+        image: "debezium/connect"
+        depends_on:
+          - kafka
+          - zookeeper
+        environment:
+          - BOOTSTRAP_SERVERS=kafka:29092
+          - GROUP_ID=1
+          - CONFIG_STORAGE_TOPIC=my_connect_configs
+          - OFFSET_STORAGE_TOPIC=my_connect_offsets
+          - STATUS_STORAGE_TOPIC=my_source_connect_statuses
+        networks:
+           - app-network
+   kafdrop:
+        image: "obsidiandynamics/kafdrop"
+        ports:
+          - 9000:9000
+        depends_on: 
+          - connect
+        environment: 
+          - KAFKA_BROKERCONNECT=kafka:29092
+        networks:
+           - app-network
+networks:
+   app-network:
+       driver: bridge
+volumes:
+  database:
